@@ -12,10 +12,11 @@ class Seq2seq:
 
         self.global_step = tf.Variable(0, name="global_step", trainable=False)
 
-        self.encoder_inputs = tf.placeholder(tf.int32, [batch_size, max_sequence_len], name="encoder_inputs")
-        self.encoder_inputs_actual_lengths = tf.placeholder(tf.int32, [batch_size], name="encoder_inputs_actual_lengths")
-        self.decoder_outputs = tf.placeholder(tf.int32, [batch_size, max_sequence_len], name="decoder_outputs")
-        self.decoder_outputs_actual_lengths = tf.placeholder(tf.int32, [batch_size], name="decoder_outputs_actual_lengths")
+        self.encoder_inputs = tf.placeholder(tf.int32, [None, max_sequence_len], name="encoder_inputs")
+        self.encoder_inputs_actual_lengths = tf.placeholder(tf.int32, [None], name="encoder_inputs_actual_lengths")
+        self.decoder_outputs = tf.placeholder(tf.int32, [None, max_sequence_len], name="decoder_outputs")
+        self.decoder_outputs_actual_lengths = tf.placeholder(tf.int32, [None], name="decoder_outputs_actual_lengths")
+        #self.decoder_outputs_onehot = tf.placeholder(tf.int32, [batch_size, max_sequence_len, vocab_size], name="decoder_outputs_onehot")
         
         #self.embedding_mat = tf.Variable(pretrained_embedding_mat, name="vocab_W")
         self.embedding_mat = tf.Variable(tf.random_uniform([vocab_size, embedding_size], -1.0, 1.0), name="vocab_W")
@@ -25,6 +26,8 @@ class Seq2seq:
 
         self.encoder_inputs_time_major = tf.transpose(self.encoder_inputs_embeded, perm=[1, 0, 2])
         self.decoder_outputs_time_major = tf.transpose(self.decoder_outputs_embeded, perm=[1, 0, 2])
+        #self.decoder_outputs_onehot = tf.one_hot(self.decoder_outputs, vocab_size)
+        #self.decoder_outputs_onehot_timemajor = tf.transpose(self.decoder_outputs_onehot, perm=[1, 0, 2])
 
         logging.debug("encoder_inputs_time_major's shape: {}".format(self.encoder_inputs_time_major.get_shape().as_list()))
 
@@ -49,15 +52,21 @@ class Seq2seq:
                 decoder_cell, helper, encoder_state,
                 output_layer=projection_layer)
 
-        outputs, _ = tf.contrib.seq2seq.dynamic_decode(decoder)
+        outputs, final_context_state, _ = tf.contrib.seq2seq.dynamic_decode(decoder, output_time_major=True, swap_memory=True)
+
+        sample_id = outputs.sample_id
         logits = outputs.rnn_output
 
-        crossent = tf.nn.sparse_softmax_cross_entropy_with_logits(
-                labels=self.decoder_outputs, logits=logits)
+        #logging.debug("decoder_outputs_onehot_timemajor's shape: {}".format(self.decoder_outputs_onehot_timemajor.get_shape().as_list()))
+        decoder_max_steps, decoder_batch_size, decoder_dim = tf.unstack(tf.shape(outputs.rnn_output))
+        self.decoder_outputs_true_length = tf.transpose(self.decoder_outputs, perm=[1, 0])[:decoder_max_steps]
+        logging.debug("rnn_outpus's shape: {}".format(logits.get_shape().as_list()))
 
-        target_weights = tf.sequence_mask(
-                        self.decoder_outputs_actual_lengths, max_sequence_len, dtype=logits.dtype)
-        self.loss = tf.reduce_sum(crossent*target_weights) / tf.to_float(self.batch_size) 
+        #target_weights = tf.sequence_mask(
+        #                self.decoder_outputs_actual_lengths, max_sequence_len, dtype=logits.dtype)
+        self.mask = tf.to_float(tf.not_equal(self.decoder_outputs_true_length, 0))
+        self.loss = tf.contrib.seq2seq.sequence_loss(
+                            outputs.rnn_output, self.decoder_outputs_true_length, weights=self.mask)
 
         optimizer = tf.train.AdamOptimizer(name="AdamOptimizer")
         self.grads, self.vars = zip(*optimizer.compute_gradients(self.loss))
