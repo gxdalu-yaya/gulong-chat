@@ -1,0 +1,12 @@
+INFO:root:logging test
+INFO:root:encoder_inputs_time_major's shape: [100, 128, 64]
+INFO:root:logging test
+DEBUG:root:encoder_inputs_time_major's shape: [100, 128, 64]
+INFO:root:logging test
+DEBUG:root:encoder_inputs_time_major's shape: [100, 128, 64]
+INFO:root:logging test
+DEBUG:root:encoder_inputs_time_major's shape: [100, 128, 64]
+DEBUG:root:encoder_state's shape: [128, 64]
+INFO:root:logging test
+DEBUG:root:encoder_inputs_time_major's shape: [100, 128, 90]
+DEBUG:root:encoder_state's shape: [128, 64]
