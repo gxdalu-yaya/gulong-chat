@@ -1,5 +1,4 @@
 #coding=utf-8
-
 import sys
 import os
 import logging
@@ -25,7 +24,7 @@ tf.flags.DEFINE_integer("embedding_dim", 90, "Dimensionality of word embedding")
 tf.flags.DEFINE_integer("max_sequence_len", 60, "句子最大长度，问句和答案都一样")
 tf.flags.DEFINE_integer("batch_size", 128, "Batch size")
 tf.flags.DEFINE_integer("hidden_size", 64, "Hidden size")
-tf.flags.DEFINE_integer("vocab_size", 23078, "Vocab size")
+tf.flags.DEFINE_integer("vocab_size", 23080, "Vocab size")
 
 tf.flags.DEFINE_integer("num_epochs", 100, "Number of training epochs")
 tf.flags.DEFINE_integer("evaluate_every", 3, "Evaluate model on dev set after this many steps")
@@ -39,8 +38,24 @@ tf.flags.DEFINE_boolean("log_device_placement", False, "Log placement of ops on 
 FLAGS = tf.flags.FLAGS
 FLAGS._parse_flags()
 
-train_data = data_helpers.load_data(open(FLAGS.traindata_file, "r").readlines()) 
-test_data = data_helpers.load_data(open(FLAGS.testdata_file, "r").readlines())
+
+def load_wordindex(filename):
+    word_index = dict()
+    for line in open(filename, "r"):
+        datas = line.strip().split("\t")
+        if len(datas) < 2:
+            continue
+        index = int(datas[0])
+        word = datas[1]
+        word_index[word] = index
+    return word_index
+
+word_index = load_wordindex("./data/word.tsv")
+sent_sos_id = word_index["<s>"]
+sent_eos_id = word_index["</s>"]
+
+train_data = data_helpers.load_data(open(FLAGS.traindata_file, "r").readlines(), word_index) 
+test_data = data_helpers.load_data(open(FLAGS.testdata_file, "r").readlines(), word_index)
 
 # Training
 logging.info("logging test")
@@ -53,12 +68,14 @@ with tf.Graph().as_default():
     with sess.as_default():
         model = Seq2seq(
             max_sequence_len=FLAGS.max_sequence_len,
-            batch_size=FLAGS.batch_size,
             embedding_size=FLAGS.embedding_dim,
             hidden_size=FLAGS.hidden_size,
-            vocab_size=FLAGS.vocab_size
+            vocab_size=FLAGS.vocab_size,
+            sent_sos_id=sent_sos_id,
+            sent_eos_id=sent_eos_id,
         )
         
+        train_op, loss_op = model.decoding_layer_train()
         saver = tf.train.Saver(tf.global_variables() ,max_to_keep=FLAGS.num_checkpoints)
         sess.run(tf.global_variables_initializer())
         
@@ -71,8 +88,9 @@ with tf.Graph().as_default():
                 model.encoder_inputs_actual_lengths: encoder_inputs_actual_lengths,
                 model.decoder_outputs: decoder_outputs,
                 model.decoder_outputs_actual_lengths: decoder_outputs_actual_lengths,
+                model.batch_size:len(encoder_inputs),
             }
-            _, step, loss = sess.run([model.train_op, model.global_step, model.loss], feed_dict=feed_dict)
+            _, step, loss = sess.run([train_op, model.global_step, loss_op], feed_dict=feed_dict)
             logging.info("step: {}, loss: {}".format(step, loss))
             if step % FLAGS.evaluate_every == 0:
                 logging.info("\nEvalution:")
@@ -86,8 +104,9 @@ with tf.Graph().as_default():
                     model.encoder_inputs_actual_lengths: test_encoder_inputs_actual_lengths,
                     model.decoder_outputs: test_decoder_outputs,
                     model.decoder_outputs_actual_lengths: test_decoder_outputs_actual_lengths,
+                    model.batch_size:len(test_encoder_inputs),
                 }
-                test_step, test_loss = sess.run([model.global_step, model.loss], feed_dict=test_feed_dict)
+                test_step, test_loss = sess.run([model.global_step, loss_op], feed_dict=test_feed_dict)
                 logging.info("step: {}, test_loss: {}".format(test_step, test_loss))
             if step % FLAGS.checkpoint_every == 0:
                 path = saver.save(sess, "./model", global_step=step)

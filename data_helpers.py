@@ -6,24 +6,22 @@ import jieba
 MAX_LEN = 60
 VOCAB_SIZE = 23078 
 
-word_index = dict()
-for line in open("./data/word.tsv", "r"):
-    datas = line.strip().split("\t")
-    if len(datas) < 2:
-        continue
-    index = int(datas[0])
-    word = datas[1]
-    word_index[word] = index
 
 def get_one_hot(targets, nb_classes):
     return np.eye(nb_classes)[np.array(targets).reshape(-1)]
 
-def load_data(chat_datas):
+def load_data(chat_datas, word_index):
     encoder_inputs = list()
     encoder_inputs_actual_lengths = list()
     decoder_outputs = list()
     decoder_outputs_onehot = list()
     decoder_outputs_actual_lengths = list()
+
+    sent_end_id = word_index["</s>"]
+    sent_start_id = word_index["<s>"]
+    sent_pad_id = word_index["<pad>"]
+    sent_unk_id = word_index["<unk>"]
+
     for line in chat_datas:
         datas = line.strip().split("\t")
         if len(datas) != 2:
@@ -32,35 +30,36 @@ def load_data(chat_datas):
         chat2 = datas[1]
         chat1_seged = jieba.cut(chat1)
         chat2_seged = jieba.cut(chat2)
+
         chat1_list = list()
         chat2_list = list()
-        label_onehot = list()
+
         for word in chat1_seged:
-            chat1_list.append(word_index.get(word, 0))
+            chat1_list.append(word_index.get(word, sent_unk_id))
         if len(chat1_list) < MAX_LEN:
-            # '1'对应EOS
-            chat1_list.append(1)
+            chat1_list.append(sent_end_id)
             temp_len = len(chat1_list)
             if temp_len < MAX_LEN:
-                chat1_list.extend([0]*(MAX_LEN-temp_len))
+                chat1_list.extend([sent_pad_id]*(MAX_LEN-temp_len))
         else:
             chat1_list = chat1_list[:MAX_LEN]
-            chat1_list[-1] = 1
+            chat1_list[-1] = sent_end_id 
+
         encoder_inputs.append(chat1_list)
-        encoder_inputs_actual_lengths.append(chat1_list.index(1))
+        encoder_inputs_actual_lengths.append(chat1_list.index(sent_end_id))
+
         for word in chat2_seged:
-            chat2_list.append(word_index.get(word, 0))
+            chat2_list.append(word_index.get(word, sent_unk_id))
         if len(chat2_list) < MAX_LEN:
-            # '1'对应EOS
-            chat2_list.append(1)
+            chat2_list.append(sent_end_id)
             temp_len = len(chat2_list)
             if temp_len < MAX_LEN:
-                chat2_list.extend([0]*(MAX_LEN-temp_len))
+                chat2_list.extend([sent_pad_id]*(MAX_LEN-temp_len))
         else:
             chat2_list = chat2_list[:MAX_LEN]
-            chat2_list[-1] = 1
+            chat2_list[-1] = sent_end_id
         decoder_outputs.append(chat2_list)
-        decoder_outputs_actual_lengths.append(chat2_list.index(1))
+        decoder_outputs_actual_lengths.append(chat2_list.index(sent_end_id))
     return list(zip(encoder_inputs, encoder_inputs_actual_lengths, decoder_outputs, decoder_outputs_actual_lengths))
 
 def batch_iter(data, batch_size, num_epochs, shuffle=True):
