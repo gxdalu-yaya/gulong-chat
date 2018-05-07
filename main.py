@@ -11,9 +11,6 @@ from model import Seq2seq
 def test():
     print "sssssssssss"
 
-def test2():
-    print "sssssssssss"
-
 logging.basicConfig(
         level = logging.DEBUG,
         handlers = [
